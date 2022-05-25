@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using KH;
 
+
 namespace KH.Solitaire {
 
 	enum FreeCellType {
@@ -13,6 +14,7 @@ namespace KH.Solitaire {
 	}
 
 	class CardStackFreeCellCell : CardStack {
+
 		public override int NumberOfMovableCards() { return 1; }
 		public override bool ShouldFlipMovingCards() { return false; }
 		public override bool ShouldFlipTopCard() { return false; }
@@ -107,6 +109,8 @@ namespace KH.Solitaire {
 	}
 
 	public class CardGameFreeCell : CardGame {
+		public const bool verbose = false;
+
 		private List<CardStackFreeCellTableau> _tableaus = new List<CardStackFreeCellTableau>();
 		private List<CardStackFreeCellFoundation> _foundations = new List<CardStackFreeCellFoundation>();
 		private List<CardStackFreeCellCell> _cells = new List<CardStackFreeCellCell>();
@@ -213,7 +217,7 @@ namespace KH.Solitaire {
             }
 
 			if (from == null || to == null || from.Count == 0) {
-				Console.WriteLine($"Invalid SN move {sn}");
+				if (verbose) Console.WriteLine($"Invalid SN move {sn}");
 				return false;
 			}
 			if (to is CardStackFreeCellFoundation) {
@@ -226,7 +230,7 @@ namespace KH.Solitaire {
 				move = TryMakeMove(from, to);
             }
 			if (move == null) {
-				Console.WriteLine($"Invalid SN move {sn}");
+				if (verbose) Console.WriteLine($"Invalid SN move {sn}");
 				return false;
 			}
 			MakeMove(move);
@@ -241,12 +245,12 @@ namespace KH.Solitaire {
             } else if (c >= 'a' && c <= 'e') {
 				int idx = c - 'a';
 				if (idx >= _cells.Count) {
-					Console.WriteLine($"Bad bounds on SN notation {c}");
+					if (verbose) Console.WriteLine($"Bad bounds on SN notation {c}");
 					idx = _cells.Count - 1;
                 }
 				return _cells[idx];
             } else {
-				Console.WriteLine($"Unrecognized char {c}");
+				if (verbose) Console.WriteLine($"Unrecognized char {c}");
 				return null;
             }
 		}

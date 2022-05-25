@@ -3,6 +3,7 @@ using System.Text;
 using KH.Solitaire;
 
 const bool verbose = false;
+const bool dryRun = false;
 const int DEFAULT_ITERATION_COUNT = 200000;
 const int BUCKET_SIZE = 1000;
 const string FC_SOLVER_BIN_PATH = "T:/Apps/Freecell Solver 6.6.0/bin";
@@ -23,7 +24,7 @@ static string DealFor(int gameNum) {
 static string TryGame(string dealPath, int numFreeCells, int maxIterations) {
     Process process = new Process();
     process.StartInfo.FileName = $"{FC_SOLVER_BIN_PATH}/fc-solve.exe";
-    process.StartInfo.Arguments = $"-m -sn -l looking-glass -mi {maxIterations} --freecells-num {numFreeCells} \"{dealPath}\"";
+    process.StartInfo.Arguments = $"-m -snx -l looking-glass -mi {maxIterations} --freecells-num {numFreeCells} \"{dealPath}\"";
     //process.StartInfo.Arguments = $"-p -t -sam -l looking-glass -mi {maxIterations} --freecells-num {numFreeCells} \"{dealPath}\"";
     process.StartInfo.RedirectStandardOutput = true;
     process.StartInfo.UseShellExecute = false;
@@ -75,6 +76,9 @@ static int HandleGame(int gameNum, int maxIterations) {
     for (fcCount = 4; fcCount >= 0 && lastSolve != null; fcCount--) {
         lastSolve = TryGame(path, fcCount, maxIterations);
         if (lastSolve != null) {
+            if (!IsValid(gameNum, fcCount, lastSolve)) {
+                Console.WriteLine($"Still mad about deal {gameNum}");
+            }
             lastGoodSolve = lastSolve;
             lastFCSolve = fcCount;
         }
@@ -103,6 +107,7 @@ static int HandleGame(int gameNum, int maxIterations) {
 //}
 
 static void WriteSolution(int gameNum, int fcCount, string solution) {
+    if (dryRun) return;
     int bucket = gameNum / BUCKET_SIZE * BUCKET_SIZE;
     WriteToFile($"{SOLUTIONS_ROOT_PATH}/Proofs/{bucket}", $"{gameNum}.txt", $"{fcCount}\n{solution}");
 }
@@ -144,11 +149,53 @@ static void RunSelected(params int[] selected) {
     CleanupScratch();
 }
 
-//RunSingle(46);
-//RunRange(244151, 1000000);
+static bool DoThing(System.Func<int, bool> doer, int start, int endInclusive, string intervalMessagePrefix, int printInterval) {
+    Stopwatch stopWatch = new Stopwatch();
+    stopWatch.Start();
+    for (int i = start; i <= endInclusive; i++) {
+        if (i % printInterval == 0) {
+            stopWatch.Stop();
+            long seconds = stopWatch.ElapsedMilliseconds / 1000;
+            long remaining = (endInclusive - i) / printInterval * stopWatch.ElapsedMilliseconds / 1000;
+            Console.WriteLine($"{intervalMessagePrefix} at index {i}. {seconds} seconds since last message. Estimated time left: {remaining}s");
+            stopWatch.Restart();
+        }
+        if(doer(i)) {
+            Console.WriteLine("Bailing out early for thing.");
+            return true;
+        }
+    }
+    return false;
+}
+
+static void Reprocess(int start, int end) {
+    DoThing((int dealNum) => {
+        if (!IsValidSolution(dealNum)) {
+            if (verbose) Console.WriteLine($"Deal {dealNum} invalid");
+            int fcCount = CachedDealCellCount(dealNum);
+            string solution = TryGame(WriteDeal(dealNum), fcCount, DEFAULT_ITERATION_COUNT);
+            if (solution == null) {
+                Console.WriteLine($"Couldn't resolve deal {dealNum}");
+                return true;
+            }
+            if (!IsValid(dealNum, fcCount, solution)) {
+                Console.WriteLine($"Solution still invalid for {dealNum}");
+                return true;
+            }
+            WriteSolution(dealNum, fcCount, solution);
+        } else {
+            if (verbose) Console.WriteLine($"{dealNum} solution already fine.");
+        }
+        return false;
+    }, start, end, "Validating deal", 100);
+}
+
+//RunSingle(344);
+//RunRange(1, 345);
+Reprocess(1, 10000);
 //Analyze(1, 1000000);
 //MakeSolutionList();
-Validate(1, 345);
+//Validate(1, 345);
 
 static void Iterate(int start, int end) {
     // Re-run solver on existing solutions, starting at solved count - 1,
@@ -172,6 +219,12 @@ static bool IsValid(int dealNum, int cellCount, string solution) {
     CardGameFreeCell game = new CardGameFreeCell();
     game.PlayNewGame(dealNum, cellCount);
     return game.PlaySolution(solution);
+}
+
+static void GetSolutionInfo(int dealNum, out int cellCount, out string solution) {
+    string[] lines = File.ReadAllLines(PathForGameNum(dealNum));
+    cellCount = int.Parse(lines[0]);
+    solution = string.Join('\n', lines.Skip(1));
 }
 
 static bool IsValidSolution(int gameNum) {
@@ -201,7 +254,7 @@ static void MakeSolutionList() {
                 stopWatch.Stop();
                 long seconds = stopWatch.ElapsedMilliseconds / 1000;
                 long remaining = (target - i) / pollingInterval * stopWatch.ElapsedMilliseconds / 1000;
-                Console.WriteLine($"On deal {i}. {seconds} seconds since last message. Estimated time left: {remaining}s");
+                Console.WriteLine($"On deal {i}. {seconds}s since last message. Estimated time left: {remaining}s");
                 stopWatch.Restart();
             }
         }
