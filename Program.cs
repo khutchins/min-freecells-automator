@@ -156,8 +156,12 @@ static bool DoThing(System.Func<int, bool> doer, int start, int endInclusive, st
         if (i % printInterval == 0) {
             stopWatch.Stop();
             long seconds = stopWatch.ElapsedMilliseconds / 1000;
-            long remaining = (endInclusive - i) / printInterval * stopWatch.ElapsedMilliseconds / 1000;
-            Console.WriteLine($"{intervalMessagePrefix} at index {i}. {seconds}s since last message. Estimated time left: {remaining}s");
+            totalTime += stopWatch.ElapsedMilliseconds;
+            double percentDone = (i - start) * 1.0 / (endInclusive - start);
+            long remaining = (long)(totalTime / percentDone * (1 - percentDone));
+            string remain = FormatTime(remaining /  1000);
+            Console.WriteLine(
+                $"{intervalMessagePrefix} @ {i}. {seconds}s since last. {(percentDone * 100).ToString("0.00")}% done. Est. time left: {remain}");
             stopWatch.Restart();
         }
         if(doer(i)) {
@@ -166,6 +170,14 @@ static bool DoThing(System.Func<int, bool> doer, int start, int endInclusive, st
         }
     }
     return false;
+}
+
+static string FormatTime(long time) {
+    if (time < 300) return $"{time}s";
+    time /= 60;
+    if (time < 180) return $"{time}m";
+    time /= 60;
+    return $"{time}h";
 }
 
 static void Reprocess(int start, int end) {
@@ -187,7 +199,7 @@ static void Reprocess(int start, int end) {
             if (verbose) Console.WriteLine($"{dealNum} solution already fine.");
         }
         return false;
-    }, start, end, "Validating deal", 100);
+    }, start, end, "Reprocessing deal", 1000);
 }
 
 //RunSingle(344);
@@ -241,14 +253,15 @@ static int CachedDealCellCount(int num) {
 
 static void MakeSolutionList() {
     string totalPath = Path.Combine(SOLUTIONS_ROOT_PATH, "min_cells.txt");
-    using (FileStream fs = File.Create(totalPath)) {
+    int end = 1_000_000;
+    byte[] bytes = new byte[end * 2];
         DoThing((int dealNum) => {
             int cellCount = CachedDealCellCount(dealNum);
-            fs.WriteByte((byte)(cellCount + '0'));
-            fs.WriteByte((byte)'\n');
+        bytes[(dealNum - 1) * 2] = (byte)(cellCount + '0');
+        bytes[(dealNum - 1) * 2 + 1] = (byte)'\n';
             return false;
-        }, 1, 1_000_000, "Making list", 10_000);
-    }
+    }, 1, end, "Making list", 10_000);
+    File.WriteAllBytes(totalPath, bytes);
 }
 
 static void Analyze(int start, int end) {
