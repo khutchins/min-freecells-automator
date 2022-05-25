@@ -3,6 +3,7 @@ using System.Text;
 
 const bool verbose = false;
 const int DEFAULT_ITERATION_COUNT = 200000;
+const int BUCKET_SIZE = 1000;
 const string FC_SOLVER_BIN_PATH = "T:/Apps/Freecell Solver 6.6.0/bin";
 const string SOLUTIONS_ROOT_PATH = "K:/git/min-freecells";
 
@@ -81,13 +82,32 @@ static int HandleGame(int gameNum, int maxIterations) {
     return lastFCSolve;
 }
 
+//static int HandleGame(int gameNum, int startingCount, int maxIterations) {
+//    if (verbose) Console.WriteLine($"Starting deal {gameNum}");
+//    if (startingCount <= 0) return 0;
+//    string path = WriteDeal(gameNum);
+//    int fcCount = startingCount;
+//    int lastFCSolve = startingCount;
+//    string lastGoodSolve = null;
+//    for (fcCount = startingCount; fcCount >= 0; fcCount--) {
+//        string lastSolve = TryGame(path, fcCount, maxIterations);
+//        if (lastSolve != null) {
+//            lastGoodSolve = lastSolve;
+//            lastFCSolve = fcCount;
+//        } else {
+//            break;
+//        }
+//    }
+//    string lastSolve = TryGame(path, 5, maxIterations);
+//}
+
 static void WriteSolution(int gameNum, int fcCount, string solution) {
-    int bucket = gameNum / 1000 * 1000;
+    int bucket = gameNum / BUCKET_SIZE * BUCKET_SIZE;
     WriteToFile($"{SOLUTIONS_ROOT_PATH}/Proofs/{bucket}", $"{gameNum}.txt", $"{fcCount}\n{solution}");
 }
 
 static string PathForGameNum(int gameNum) {
-    int bucket = gameNum / 1000 * 1000;
+    int bucket = gameNum / BUCKET_SIZE * BUCKET_SIZE;
     return $"{SOLUTIONS_ROOT_PATH}/Proofs/{bucket}/{gameNum}.txt";
 }
 
@@ -124,15 +144,56 @@ static void RunSelected(params int[] selected) {
 }
 
 //RunSingle(46);
-//RunRange(50001, 200000);
-Analyze(1, 200000);
+//RunRange(244151, 1000000);
+//Analyze(1, 1000000);
+MakeSolutionList();
+
+static void Iterate(int start, int end) {
+    // Re-run solver on existing solutions, starting at solved count - 1,
+    // attempting to improve them.
+}
+
+static void Validate() {
+    // Take all solutions in the validation folder.
+    // If they are better than prior solution (or prior solution DNE)
+    // overwrite prior solution with them.
+    // If they are not, move to bad_proofs/ folder.
+}
+
+static int CachedDealCellCount(int num) {
+    string first = File.ReadLines(PathForGameNum(num)).First();
+    int cellCount = int.Parse(first);
+    return cellCount;
+}
+
+static void MakeSolutionList() {
+    string totalPath = Path.Combine(SOLUTIONS_ROOT_PATH, "min_cells.txt");
+    using (FileStream fs = File.Create(totalPath)) {
+        Stopwatch stopWatch = new Stopwatch();
+        stopWatch.Start();
+        int target = 1_000_000;
+        int pollingInterval = 1_000;
+        for (int i = 1; i <= target; i++) {
+            int cellCount = CachedDealCellCount(i);
+            fs.WriteByte((byte)(cellCount + '0'));
+            fs.WriteByte((byte)'\n');
+            if (i % pollingInterval == 0) {
+                stopWatch.Stop();
+                long seconds = stopWatch.ElapsedMilliseconds / 1000;
+                long remaining = (target - i) / pollingInterval * stopWatch.ElapsedMilliseconds / 1000;
+                Console.WriteLine($"On deal {i}. {seconds} seconds since last message. Estimated time left: {remaining}s");
+                stopWatch.Restart();
+            }
+        }
+    }
+}
 
 static void Analyze(int start, int end) {
     Stopwatch watch = new Stopwatch();
+    watch.Start();
     Dictionary<int, int> map = new Dictionary<int, int>();
     for (int i = start; i <= end; i++) {
-        string first = File.ReadLines(PathForGameNum(i)).First();
-        int cellCount = int.Parse(first);
+        int cellCount = CachedDealCellCount(i);
         if (!map.ContainsKey(cellCount)) {
             map[cellCount] = 0;
         }
