@@ -205,15 +205,26 @@ namespace KH.Solitaire {
 			sn = sn.ToLower();
 			CardStack from = StackForSNIndex(sn[0]);
 			CardStack to = StackForSNIndex(sn[1]);
+			int cards = 1;
+			if (sn.Length > 3) {
+				char amt = sn[3];
+				if (amt > '0' && amt <= '9') cards = amt - '0';
+				else if (amt >= 'a' && amt <= 'f') cards = amt - 'a' + 10;
+            }
 
 			if (from == null || to == null || from.Count == 0) {
 				Console.WriteLine($"Invalid SN move {sn}");
 				return false;
-            }
+			}
 			if (to is CardStackFreeCellFoundation) {
 				to = FoundationForSuit(from.LastCard.Suit);
+			}
+			Move move;
+			if (to is CardStackFreeCellTableau && to.Count == 0) {
+				move = EasyMoveCheck(from, to, cards);
+			} else {
+				move = TryMakeMove(from, to);
             }
-			Move move = TryMakeMove(from, to);
 			if (move == null) {
 				Console.WriteLine($"Invalid SN move {sn}");
 				return false;
