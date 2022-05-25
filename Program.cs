@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Text;
+using KH.Solitaire;
 
 const bool verbose = false;
 const int DEFAULT_ITERATION_COUNT = 200000;
@@ -146,18 +147,37 @@ static void RunSelected(params int[] selected) {
 //RunSingle(46);
 //RunRange(244151, 1000000);
 //Analyze(1, 1000000);
-MakeSolutionList();
+//MakeSolutionList();
+Validate(1, 345);
 
 static void Iterate(int start, int end) {
     // Re-run solver on existing solutions, starting at solved count - 1,
     // attempting to improve them.
 }
 
-static void Validate() {
+static void Validate(int start, int end) {
     // Take all solutions in the validation folder.
     // If they are better than prior solution (or prior solution DNE)
     // overwrite prior solution with them.
     // If they are not, move to bad_proofs/ folder.
+    for (int i = 1; i <= end; i++) {
+        bool valid = IsValidSolution(i);
+        if (!valid) {
+            Console.WriteLine($"Deal {i} invalid");
+        }
+    }
+}
+
+static bool IsValid(int dealNum, int cellCount, string solution) {
+    CardGameFreeCell game = new CardGameFreeCell();
+    game.PlayNewGame(dealNum, cellCount);
+    return game.PlaySolution(solution);
+}
+
+static bool IsValidSolution(int gameNum) {
+    string[] lines = File.ReadAllLines(PathForGameNum(gameNum));
+    int num = int.Parse(lines[0]);
+    return IsValid(gameNum, num, string.Join('\n', lines.Skip(1)));
 }
 
 static int CachedDealCellCount(int num) {
