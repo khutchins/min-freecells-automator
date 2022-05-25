@@ -157,7 +157,7 @@ static bool DoThing(System.Func<int, bool> doer, int start, int endInclusive, st
             stopWatch.Stop();
             long seconds = stopWatch.ElapsedMilliseconds / 1000;
             long remaining = (endInclusive - i) / printInterval * stopWatch.ElapsedMilliseconds / 1000;
-            Console.WriteLine($"{intervalMessagePrefix} at index {i}. {seconds} seconds since last message. Estimated time left: {remaining}s");
+            Console.WriteLine($"{intervalMessagePrefix} at index {i}. {seconds}s since last message. Estimated time left: {remaining}s");
             stopWatch.Restart();
         }
         if(doer(i)) {
@@ -242,22 +242,12 @@ static int CachedDealCellCount(int num) {
 static void MakeSolutionList() {
     string totalPath = Path.Combine(SOLUTIONS_ROOT_PATH, "min_cells.txt");
     using (FileStream fs = File.Create(totalPath)) {
-        Stopwatch stopWatch = new Stopwatch();
-        stopWatch.Start();
-        int target = 1_000_000;
-        int pollingInterval = 1_000;
-        for (int i = 1; i <= target; i++) {
-            int cellCount = CachedDealCellCount(i);
+        DoThing((int dealNum) => {
+            int cellCount = CachedDealCellCount(dealNum);
             fs.WriteByte((byte)(cellCount + '0'));
             fs.WriteByte((byte)'\n');
-            if (i % pollingInterval == 0) {
-                stopWatch.Stop();
-                long seconds = stopWatch.ElapsedMilliseconds / 1000;
-                long remaining = (target - i) / pollingInterval * stopWatch.ElapsedMilliseconds / 1000;
-                Console.WriteLine($"On deal {i}. {seconds}s since last message. Estimated time left: {remaining}s");
-                stopWatch.Restart();
-            }
-        }
+            return false;
+        }, 1, 1_000_000, "Making list", 10_000);
     }
 }
 
