@@ -47,8 +47,8 @@ static string TryGame(string dealPath, int numFreeCells, int maxIterations) {
 
 static string WriteToFile(string path, string fileName, string contents) {
     string totalPath = Path.Combine(path, fileName);
-    if (!System.IO.Directory.Exists(path)) {
-        System.IO.Directory.CreateDirectory(path);
+    if (!Directory.Exists(path)) {
+        Directory.CreateDirectory(path);
     }
     using (FileStream fs = File.Create(totalPath)) {
         byte[] info = new ASCIIEncoding().GetBytes(contents);
@@ -87,34 +87,38 @@ static int HandleGame(int gameNum, int maxIterations) {
     return lastFCSolve;
 }
 
-//static int HandleGame(int gameNum, int startingCount, int maxIterations) {
-//    if (verbose) Console.WriteLine($"Starting deal {gameNum}");
-//    if (startingCount <= 0) return 0;
-//    string path = WriteDeal(gameNum);
-//    int fcCount = startingCount;
-//    int lastFCSolve = startingCount;
-//    string lastGoodSolve = null;
-//    for (fcCount = startingCount; fcCount >= 0; fcCount--) {
-//        string lastSolve = TryGame(path, fcCount, maxIterations);
-//        if (lastSolve != null) {
-//            lastGoodSolve = lastSolve;
-//            lastFCSolve = fcCount;
-//        } else {
-//            break;
-//        }
-//    }
-//    string lastSolve = TryGame(path, 5, maxIterations);
-//}
-
 static void WriteSolution(int gameNum, int fcCount, string solution) {
+    WriteSolutionToDir(BucketPath(gameNum), gameNum, fcCount, solution);
+}
+
+static void WriteSolutionToToValidate(int gameNum, int fcCount, string solution) {
+    WriteSolutionToDir(PathForToValidate(), gameNum, fcCount, solution);
+}
+
+static void WriteSolutionToDir(string dir, int gameNum, int fcCount, string solution) {
     if (dryRun) return;
+    WriteToFile(dir, $"{gameNum}.txt", $"{fcCount}\n{solution}");
+}
+
+static string PathForToValidate() {
+    return $"{SOLUTIONS_ROOT_PATH}/ToValidate";
+}
+
+static string PathForBadSolutions() {
+    return $"{SOLUTIONS_ROOT_PATH}/ToValidate/Invalid";
+}
+
+static string PathForRedundantSolutions() {
+    return $"{SOLUTIONS_ROOT_PATH}/ToValidate/Redundant";
+}
+
+static string BucketPath(int gameNum) {
     int bucket = gameNum / BUCKET_SIZE * BUCKET_SIZE;
-    WriteToFile($"{SOLUTIONS_ROOT_PATH}/Proofs/{bucket}", $"{gameNum}.txt", $"{fcCount}\n{solution}");
+    return $"{SOLUTIONS_ROOT_PATH}/Proofs/{bucket}/";
 }
 
 static string PathForGameNum(int gameNum) {
-    int bucket = gameNum / BUCKET_SIZE * BUCKET_SIZE;
-    return $"{SOLUTIONS_ROOT_PATH}/Proofs/{bucket}/{gameNum}.txt";
+    return $"{BucketPath(gameNum)}/{gameNum}.txt";
 }
 
 static void CleanupScratch() {
@@ -149,9 +153,15 @@ static void RunSelected(params int[] selected) {
     CleanupScratch();
 }
 
+/// <summary>
+/// Performs a Func over each element in the range start-endInclusive. Prints out a message
+/// every printInterval with some diagnostics prefixed by intervalMessagePrefix.
+/// Func can exit early by returning true. Returns whether or not the Fun exited early.
+/// </summary>
 static bool DoThing(System.Func<int, bool> doer, int start, int endInclusive, string intervalMessagePrefix, int printInterval) {
     Stopwatch stopWatch = new Stopwatch();
     stopWatch.Start();
+    long totalTime = 0;
     for (int i = start; i <= endInclusive; i++) {
         if (i % printInterval == 0) {
             stopWatch.Stop();
@@ -165,7 +175,7 @@ static bool DoThing(System.Func<int, bool> doer, int start, int endInclusive, st
             stopWatch.Restart();
         }
         if(doer(i)) {
-            Console.WriteLine("Bailing out early for thing.");
+            Console.WriteLine($"Bailing out early for thing in index {i}.");
             return true;
         }
     }
@@ -204,33 +214,72 @@ static void Reprocess(int start, int end) {
 
 //RunSingle(344);
 //RunRange(1, 345);
-Reprocess(1, 10000);
+//Reprocess(1, 1_000_000);
 //Analyze(1, 1000000);
 //MakeSolutionList();
-//Validate(1, 345);
+//Validate(1, 1_000_000);
+//Iterate(540_299, 1_000_000, DEFAULT_ITERATION_COUNT * 2);
+ValidateAllToPotentialSolutions();
 
-static void Iterate(int start, int end) {
+/// <summary>
+/// Reruns fc-solve on the range of deals provided, using maxIterations
+/// to solve each one. Successfully generated deals will be placed in the
+/// ToValidate folder, where they can be validated using the Validate call.
+/// </summary>
+static void Iterate(int start, int end, int maxIterations) {
     // Re-run solver on existing solutions, starting at solved count - 1,
     // attempting to improve them.
+    DoThing((int dealNum) => {
+        int ogCellCount = CachedDealCellCount(dealNum);
+        if (ogCellCount == 0) {
+            // Can't improve on perfection.
+            return false;
+        }
+        int cellCount = ogCellCount - 1;
+        int goodCellCount = -1;
+        string solution, goodSolution = null;
+
+        string deal = WriteDeal(dealNum);
+        while (cellCount >= 0 && (solution = TryGame(deal, cellCount, maxIterations)) != null) {
+            goodSolution = solution;
+            goodCellCount = cellCount;
+            cellCount--;
+        }
+        if (goodSolution != null) {
+            Console.WriteLine($"Improved deal {dealNum} from {ogCellCount} to {goodCellCount}");
+            WriteSolutionToToValidate(dealNum, goodCellCount, goodSolution);
+            if (!IsValid(dealNum, goodCellCount, goodSolution)) {
+                Console.WriteLine($"Generated invalid solution for deal {dealNum}. Something has gone wrong.");
+                return true;
+            }
+        }
+        return false;
+    }, start, end, "Iterating", 0_500);
 }
 
-static void Validate(int start, int end) {
-    // Take all solutions in the validation folder.
-    // If they are better than prior solution (or prior solution DNE)
-    // overwrite prior solution with them.
-    // If they are not, move to bad_proofs/ folder.
-    for (int i = 1; i <= end; i++) {
-        bool valid = IsValidSolution(i);
+/// <summary>
+/// Validates all existing solutions in the Proofs directory.
+/// </summary>
+static void ValidateExisting(int start = 1, int end = 1_000_000) {
+    DoThing((int dealNum) => {
+        bool valid = IsValidSolution(dealNum);
         if (!valid) {
-            Console.WriteLine($"Deal {i} invalid");
+            Console.WriteLine($"Deal {dealNum} invalid");
         }
-    }
+        return false;
+    }, start, end, "Validating deal", 10_000);
 }
 
 static bool IsValid(int dealNum, int cellCount, string solution) {
     CardGameFreeCell game = new CardGameFreeCell();
     game.PlayNewGame(dealNum, cellCount);
     return game.PlaySolution(solution);
+}
+
+static void GetSolutionInfoFromFile(string filePath, out int cellCount, out string solution) {
+    string[] lines = File.ReadAllLines(filePath);
+    cellCount = int.Parse(lines[0]);
+    solution = string.Join('\n', lines.Skip(1));
 }
 
 static void GetSolutionInfo(int dealNum, out int cellCount, out string solution) {
@@ -251,36 +300,97 @@ static int CachedDealCellCount(int num) {
     return cellCount;
 }
 
+static string SolutionListPath() {
+    return Path.Combine(SOLUTIONS_ROOT_PATH, "min_cells.txt");
+}
+
 static void MakeSolutionList() {
-    string totalPath = Path.Combine(SOLUTIONS_ROOT_PATH, "min_cells.txt");
+    string totalPath = SolutionListPath();
     int end = 1_000_000;
     byte[] bytes = new byte[end * 2];
-        DoThing((int dealNum) => {
-            int cellCount = CachedDealCellCount(dealNum);
+    DoThing((int dealNum) => {
+        int cellCount = CachedDealCellCount(dealNum);
         bytes[(dealNum - 1) * 2] = (byte)(cellCount + '0');
         bytes[(dealNum - 1) * 2 + 1] = (byte)'\n';
-            return false;
+        return false;
     }, 1, end, "Making list", 10_000);
     File.WriteAllBytes(totalPath, bytes);
 }
 
+static void MoveToRedundant(string path) {
+    MoveFile(path, PathForRedundantSolutions(), true);
+}
+
+static void MoveToBadSolution(string path) {
+    MoveFile(path, PathForBadSolutions(), true);
+}
+
+static void UpdateProof(string path, int dealNum) {
+    MoveFile(path, PathForGameNum(dealNum), true);
+}
+
+static void MoveFile(string source, string dest, bool allowOverwrite) {
+    if (allowOverwrite && File.Exists(dest)) {
+        File.Delete(dest);
+    }
+    if (!Directory.Exists(dest)) {
+        Directory.CreateDirectory(dest);
+    }
+    File.Move(source, dest);
+}
+
+static void ValidateAllToPotentialSolutions() {
+    // Take all solutions in the validation folder.
+    // If they are better than prior solution (or prior solution DNE)
+    // overwrite prior solution with them.
+    // If they are not, move to bad_proofs/ folder.
+    foreach (string path in Directory.GetFiles(PathForToValidate())) {
+        string name = Path.GetFileNameWithoutExtension(path);
+        GetSolutionInfoFromFile(path, out int proposedCellCount, out string solution);
+        int dealNum = int.Parse(name);
+        int existingCellCount = CachedDealCellCount(dealNum);
+
+        if (existingCellCount <= proposedCellCount) {
+            Console.WriteLine($"Proposed proof for {dealNum} was not better than existing one.");
+            MoveToRedundant(path);
+            continue;
+        } else if (!IsValid(dealNum, proposedCellCount, solution)) {
+            Console.WriteLine($"Proposed proof for {dealNum} was invalid.");
+            MoveToBadSolution(path);
+            continue;
+        } else {
+            Console.WriteLine($"Deal {dealNum} updated from {existingCellCount} -> {proposedCellCount} cells.");
+            UpdateProof(path, dealNum);
+            UpdateDealInSolutionList(dealNum, proposedCellCount);
+        }
+    }
+}
+
+static void UpdateDealInSolutionList(int dealNum, int cellCount) {
+    string totalPath = SolutionListPath();
+    using (FileStream fs = File.OpenWrite(totalPath)) {
+        fs.Seek((dealNum - 1) * 2, SeekOrigin.Begin);
+        fs.WriteByte((byte)(cellCount + '0'));
+    }
+}
+
+/// <summary>
+/// Generates counts of free cell counts by looking at the Proofs/
+/// folder. This is out of date, since it'd be more efficient to just
+/// look at min_cells.txt.
+/// </summary>
 static void Analyze(int start, int end) {
-    Stopwatch watch = new Stopwatch();
-    watch.Start();
+
     Dictionary<int, int> map = new Dictionary<int, int>();
-    for (int i = start; i <= end; i++) {
-        int cellCount = CachedDealCellCount(i);
+    DoThing((int dealNum) => {
+        int cellCount = CachedDealCellCount(dealNum);
         if (!map.ContainsKey(cellCount)) {
             map[cellCount] = 0;
         }
         map[cellCount]++;
-        if (i % 10000 == 0) {
-            Console.WriteLine($"On deal {i}");
-        }
-    }
+        return false;
+    }, start, end, "Analyzing", 10_000);
 
-    watch.Stop();
-    Console.WriteLine($"Analyzed {end - start + 1} deals in {watch.ElapsedMilliseconds / 1000}s.");
     Console.WriteLine("Cell counts:");
     foreach (var kvp in map) {
         Console.WriteLine($"Cells: {kvp.Key} Number of Deals: {kvp.Value}");

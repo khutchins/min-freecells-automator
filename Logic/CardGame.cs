@@ -163,9 +163,6 @@ namespace KH.Solitaire {
 			MoveMade(ms);
 		}
 
-		protected void ShowToast(string message) {
-        }
-
 		bool PerformMoveSummary(MoveSummary ms, bool isUndo, bool animate) {
 			foreach (Move move in ms.Moves) {
 				if (!PerformMove(move, isUndo, animate)) {
