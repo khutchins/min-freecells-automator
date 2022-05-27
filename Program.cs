@@ -218,8 +218,8 @@ static void Reprocess(int start, int end) {
 //Analyze(1, 1000000);
 //MakeSolutionList();
 //Validate(1, 1_000_000);
-//Iterate(540_299, 1_000_000, DEFAULT_ITERATION_COUNT * 2);
-ValidateAllToPotentialSolutions();
+Iterate(1, 1_000_000, DEFAULT_ITERATION_COUNT);
+//ValidateAllToPotentialSolutions(false);
 
 /// <summary>
 /// Reruns fc-solve on the range of deals provided, using maxIterations
@@ -333,13 +333,19 @@ static void MoveFile(string source, string dest, bool allowOverwrite) {
     if (allowOverwrite && File.Exists(dest)) {
         File.Delete(dest);
     }
-    if (!Directory.Exists(dest)) {
-        Directory.CreateDirectory(dest);
+    string dirName = Path.GetDirectoryName(dest);
+    if (!Directory.Exists(dirName)) {
+        Directory.CreateDirectory(dirName);
     }
     File.Move(source, dest);
 }
 
-static void ValidateAllToPotentialSolutions() {
+static void ValidateAllToPotentialSolutions(bool dryRun = false) {
+    int totalImprovement = 0;
+    int validCount = 0;
+    int totalCount = 0;
+    Dictionary<int, int> fromMap = new Dictionary<int, int>();
+    Dictionary<int, int> improvementMap = new Dictionary<int, int>();
     // Take all solutions in the validation folder.
     // If they are better than prior solution (or prior solution DNE)
     // overwrite prior solution with them.
@@ -349,21 +355,43 @@ static void ValidateAllToPotentialSolutions() {
         GetSolutionInfoFromFile(path, out int proposedCellCount, out string solution);
         int dealNum = int.Parse(name);
         int existingCellCount = CachedDealCellCount(dealNum);
+        totalCount++;
 
         if (existingCellCount <= proposedCellCount) {
             Console.WriteLine($"Proposed proof for {dealNum} was not better than existing one.");
-            MoveToRedundant(path);
+            if (!dryRun) MoveToRedundant(path);
             continue;
         } else if (!IsValid(dealNum, proposedCellCount, solution)) {
             Console.WriteLine($"Proposed proof for {dealNum} was invalid.");
-            MoveToBadSolution(path);
+            if (!dryRun) MoveToBadSolution(path);
             continue;
         } else {
             Console.WriteLine($"Deal {dealNum} updated from {existingCellCount} -> {proposedCellCount} cells.");
-            UpdateProof(path, dealNum);
-            UpdateDealInSolutionList(dealNum, proposedCellCount);
+            if (!dryRun) {
+                UpdateProof(path, dealNum);
+                UpdateDealInSolutionList(dealNum, proposedCellCount);
+            }
+            int delta = existingCellCount - proposedCellCount;
+            totalImprovement += delta;
+
+            if (!improvementMap.ContainsKey(delta)) {
+                improvementMap[delta] = 0;
+            }
+            improvementMap[delta]++;
+
+            if (!fromMap.ContainsKey(existingCellCount)) {
+                fromMap[existingCellCount] = 0;
+            }
+            fromMap[existingCellCount]++;
+            validCount++;
         }
     }
+    Console.WriteLine($"{validCount}/{totalCount} proofs valid and better.");
+    Console.WriteLine($"Overall improvement was {totalImprovement} cells.");
+    Console.WriteLine($"Improved amounts:");
+    improvementMap.OrderBy(x => x.Key).ToList().ForEach(x => Console.WriteLine($"Improved by {x.Key} cells: {x.Value}"));
+    Console.WriteLine($"Improved previous cell counts:");
+    fromMap.OrderBy(x => x.Key).ToList().ForEach(x => Console.WriteLine($"Improved from {x.Key} cells: {x.Value}"));
 }
 
 static void UpdateDealInSolutionList(int dealNum, int cellCount) {
@@ -392,7 +420,5 @@ static void Analyze(int start, int end) {
     }, start, end, "Analyzing", 10_000);
 
     Console.WriteLine("Cell counts:");
-    foreach (var kvp in map) {
-        Console.WriteLine($"Cells: {kvp.Key} Number of Deals: {kvp.Value}");
-    }
+    map.OrderBy(x => x.Key).ToList().ForEach(x => Console.WriteLine($"Cells: {x.Key} Number of Deals: {x.Value}"));
 }
