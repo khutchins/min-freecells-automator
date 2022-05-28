@@ -124,7 +124,7 @@ namespace FCSolverAutomator.Helpers {
         /// will be placed in the ToValidate folder, where they can be validated 
         /// using the Validate call.
         /// </summary>
-        public void Iterate(int start, int endInclusive) {
+        public void Iterate(int start = 1, int endInclusive = 1_000_000) {
             Doer.DoThing((int dealNum) => {
                 int ogCellCount = _helper.CachedDealCellCount(dealNum);
                 if (ogCellCount == 0) {
