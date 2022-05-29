@@ -26,6 +26,10 @@ namespace FCSolverAutomator.Helpers {
             }
         }
 
+        private int PositionForDeal(int dealNum) {
+            return (dealNum - 1) * 2;
+        }
+
         /// <summary>
         /// Make the initial solutions list. 
         /// You should not have to use this.
@@ -36,8 +40,9 @@ namespace FCSolverAutomator.Helpers {
             byte[] bytes = new byte[end * 2];
             Doer.DoThing((int dealNum) => {
                 int cellCount = _helper.CachedDealCellCount(dealNum);
-                bytes[(dealNum - 1) * 2] = (byte)(cellCount + '0');
-                bytes[(dealNum - 1) * 2 + 1] = (byte)'\n';
+                int pos = PositionForDeal(dealNum);
+                bytes[pos] = (byte)(cellCount + '0');
+                bytes[pos + 1] = (byte)'\n';
                 return false;
             }, 1, end, "Making list", 10_000);
             if (_helper.DryRun) return;
@@ -45,24 +50,25 @@ namespace FCSolverAutomator.Helpers {
         }
 
         /// <summary>
-        /// Generates counts of free cell counts by looking at the Proofs/
-        /// folder. This is out of date, since it'd be more efficient to just
-        /// look at min_cells.txt.
+        /// Generates counts of free cell counts by looking at the min_cells.txt.
         /// </summary>
         public void Analyze(int start, int end) {
+            string totalPath = _helper.SolutionListPath();
+            using (FileStream fs = new FileStream(totalPath, FileMode.Open)) {
+                Dictionary<int, int> map = new Dictionary<int, int>();
+                Doer.DoThing((int dealNum) => {
+                    fs.Seek(PositionForDeal(dealNum), SeekOrigin.Begin);
+                    int cellCount = fs.ReadByte() - '0';
+                    if (!map.ContainsKey(cellCount)) {
+                        map[cellCount] = 0;
+                    }
+                    map[cellCount]++;
+                    return false;
+                }, start, end, "Analyzing", 100_000);
 
-            Dictionary<int, int> map = new Dictionary<int, int>();
-            Doer.DoThing((int dealNum) => {
-                int cellCount = _helper.CachedDealCellCount(dealNum);
-                if (!map.ContainsKey(cellCount)) {
-                    map[cellCount] = 0;
-                }
-                map[cellCount]++;
-                return false;
-            }, start, end, "Analyzing", 10_000);
-
-            Console.WriteLine("Cell counts:");
-            map.OrderBy(x => x.Key).ToList().ForEach(x => Console.WriteLine($"Cells: {x.Key} Number of Deals: {x.Value}"));
+                Console.WriteLine("Cell counts:");
+                map.OrderBy(x => x.Key).ToList().ForEach(x => Console.WriteLine($"Cells: {x.Key} Number of Deals: {x.Value}"));
+            }
         }
     }
 }
