@@ -52,9 +52,10 @@ namespace FCSolverAutomator.Helpers {
         /// <summary>
         /// Generates counts of free cell counts by looking at the min_cells.txt.
         /// </summary>
-        public void Analyze(int start, int end) {
+        public void Analyze(int start = 1, int end = 1_000_000) {
             string totalPath = _helper.SolutionListPath();
             using (FileStream fs = new FileStream(totalPath, FileMode.Open)) {
+                int count = 0;
                 Dictionary<int, int> map = new Dictionary<int, int>();
                 Doer.DoThing((int dealNum) => {
                     fs.Seek(PositionForDeal(dealNum), SeekOrigin.Begin);
@@ -63,11 +64,12 @@ namespace FCSolverAutomator.Helpers {
                         map[cellCount] = 0;
                     }
                     map[cellCount]++;
+                    count++;
                     return false;
                 }, start, end, "Analyzing", 100_000);
 
                 Console.WriteLine("Cell counts:");
-                map.OrderBy(x => x.Key).ToList().ForEach(x => Console.WriteLine($"Cells: {x.Key} Number of Deals: {x.Value}"));
+                map.OrderBy(x => x.Key).ToList().ForEach(x => Console.WriteLine($"Cells: {x.Key} Number of Deals: {x.Value} ({x.Value * 100f / count}%)"));
             }
         }
     }
